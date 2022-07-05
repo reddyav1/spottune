@@ -128,7 +128,7 @@ def test(epoch, val_loader, net, agent, dataset):
                 images, labels = images.cuda(async=True), labels.cuda(async=True)
             images, labels = Variable(images), Variable(labels)
 
-       	    probs = agent(images)
+            probs = agent(images)
             action = gumbel_softmax(probs.view(probs.size(0), -1, 2))
             policy = action[:,:,1]
             outputs = net.forward(images, policy)
@@ -141,8 +141,8 @@ def test(epoch, val_loader, net, agent, dataset):
             loss = criterion(outputs, labels)
             tasks_losses.update(loss.item(), labels.size(0))           
 
-    print "test accuracy"
-    print ("Epoch [{}/{}], Loss: {:.4f}, Acc Val: {:.4f}, Acc Avg: {:.4f}"
+    print("test accuracy")
+    print("Epoch [{}/{}], Loss: {:.4f}, Acc Val: {:.4f}, Acc Avg: {:.4f}"
         .format(epoch+1, args.nb_epochs, tasks_losses.avg, tasks_top1.val, tasks_top1.avg))
 
     return tasks_top1.avg, tasks_losses.avg
@@ -184,11 +184,11 @@ def load_weights_to_flatresnet(source, net, num_class, dataset):
     element = 0
     for name, m in net.named_modules():
         if isinstance(m, nn.BatchNorm2d) and 'parallel_block' not in name:
-            	m.weight.data = torch.nn.Parameter(store_data[element].clone())
-                m.bias.data = torch.nn.Parameter(store_data_bias[element].clone())
-                m.running_var = store_data_rv[element].clone()
-                m.running_mean = store_data_rm[element].clone()
-                element += 1
+            m.weight.data = torch.nn.Parameter(store_data[element].clone())
+            m.bias.data = torch.nn.Parameter(store_data_bias[element].clone())
+            m.running_var = store_data_rv[element].clone()
+            m.running_mean = store_data_rm[element].clone()
+            element += 1
 
     element = 1
     for name, m in net.named_modules():
@@ -207,9 +207,9 @@ def get_model(model, num_class, dataset = None):
         rnet = resnet26(num_class)
         if dataset is not None:
             if dataset == 'imagenet12':
-            	source = './resnet26_pretrained.t7'
-	    else:
-            	source = './cv/' + dataset + '/' + dataset + '.t7'
+                source = './resnet26_pretrained.t7'
+        else:
+            source = './cv/' + dataset + '/' + dataset + '.t7'
         rnet = load_weights_to_flatresnet(source, rnet, num_class, dataset)
     return rnet
 
@@ -219,7 +219,7 @@ train_loaders, val_loaders, num_classes = imdbfolder.prepare_data_loaders(datase
 criterion = nn.CrossEntropyLoss()
 
 for i, dataset in enumerate(datasets.keys()):
-    print dataset 
+    print(dataset)
     pretrained_model_dir = args.ckpdir + dataset
 
     if not os.path.isdir(pretrained_model_dir):
