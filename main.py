@@ -70,6 +70,8 @@ with open(args.ckpdir + '/weight_decays.json', 'w') as fp:
     json.dump(weight_decays, fp)
 
 def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimizer):
+    torch.autograd.set_detect_anomaly(True)
+
     #Train the model
     net.train()
     agent.train()
@@ -83,7 +85,7 @@ def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimize
         labels = task_batch[1]    
 
         if use_cuda:
-            images, labels = images.cuda(async=True), labels.cuda(async=True)
+            images, labels = images.cuda(non_blocking=True), labels.cuda(non_blocking=True)
         images, labels = Variable(images), Variable(labels)	   
 
         probs = agent(images)
@@ -125,7 +127,7 @@ def test(epoch, val_loader, net, agent, dataset):
     with torch.no_grad():
         for i, (images, labels) in enumerate(val_loader):
             if use_cuda:
-                images, labels = images.cuda(async=True), labels.cuda(async=True)
+                images, labels = images.cuda(non_blocking=True), labels.cuda(non_blocking=True)
             images, labels = Variable(images), Variable(labels)
 
             probs = agent(images)
@@ -148,7 +150,7 @@ def test(epoch, val_loader, net, agent, dataset):
     return tasks_top1.avg, tasks_losses.avg
 
 def load_weights_to_flatresnet(source, net, num_class, dataset):
-    checkpoint = torch.load(source)
+    checkpoint = torch.load(source, encoding="latin1")
     net_old = checkpoint['net']
 
     store_data = []
@@ -215,7 +217,7 @@ def get_model(model, num_class, dataset = None):
 
 #####################################
 # Prepare data loaders
-train_loaders, val_loaders, num_classes = imdbfolder.prepare_data_loaders(datasets.keys(), args.datadir, args.imdbdir, True)
+train_loaders, val_loaders, num_classes = imdbfolder.prepare_data_loaders(list(datasets.keys()), args.datadir, args.imdbdir, True)
 criterion = nn.CrossEntropyLoss()
 
 for i, dataset in enumerate(datasets.keys()):
@@ -227,7 +229,7 @@ for i, dataset in enumerate(datasets.keys()):
 
     results = np.zeros((4, args.nb_epochs, len(num_classes)))
     f = pretrained_model_dir + "/params.json"
-    with open(f, 'wb') as fh:
+    with open(f, 'w') as fh:
         json.dump(vars(args), fh)     
 
     num_class = num_classes[datasets[dataset]]

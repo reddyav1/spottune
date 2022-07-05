@@ -50,7 +50,7 @@ class conv_task(nn.Module):
     def forward(self, x):
         task = config_task.task
         y = self.conv(x)
-    	'''
+        '''
             if self.second == 0:
                 if config_task.isdropout1:
                     x = F.dropout2d(x, p=0.5, training = self.training)

@@ -28,7 +28,7 @@ class BasicBlock(nn.Module):
         self.conv1 = conv3x3(in_planes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
 
-        self.conv2 = nn.Sequential(nn.ReLU(True), conv3x3(planes, planes))
+        self.conv2 = nn.Sequential(nn.ReLU(False), conv3x3(planes, planes))
         self.bn2 = nn.BatchNorm2d(planes)
 
     def forward(self, x):
@@ -49,7 +49,7 @@ class ResNet(nn.Module):
         self.in_planes = int(32*factor)
         self.conv1 = conv3x3(3, int(32*factor))
         self.bn1 = nn.BatchNorm2d(int(32*factor))
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
         strides = [2, 2, 2]
         filt_sizes = [64, 128, 256]
@@ -71,7 +71,7 @@ class ResNet(nn.Module):
         self.parallel_blocks = nn.ModuleList(self.parallel_blocks)
         self.parallel_ds = nn.ModuleList(self.parallel_ds)
 
-        self.bn2 = nn.Sequential(nn.BatchNorm2d(int(256*factor)), nn.ReLU(True)) 
+        self.bn2 = nn.Sequential(nn.BatchNorm2d(int(256*factor)), nn.ReLU(False)) 
         self.avgpool = nn.AdaptiveAvgPool2d(1)        
         self.linear = nn.Linear(int(256*factor), num_class)
 
