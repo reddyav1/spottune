@@ -70,7 +70,7 @@ with open(args.ckpdir + '/weight_decays.json', 'w') as fp:
     json.dump(weight_decays, fp)
 
 def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimizer):
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
 
     #Train the model
     net.train()
@@ -103,7 +103,7 @@ def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimize
         tasks_losses.update(loss.item(), labels.size(0))
 
         if i % 50 == 0:
-            print ("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Acc Val: {:.4f}, Acc Avg: {:.4f}"
+            print ("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Train Acc: {:.4f}%, Acc Avg: {:.4f}%"
                 .format(epoch+1, args.nb_epochs, i+1, total_step, tasks_losses.val, tasks_top1.val, tasks_top1.avg))
        
         #---------------------------------------------------------------------#
@@ -117,7 +117,7 @@ def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimize
             
     return tasks_top1.avg , tasks_losses.avg
 
-def test(epoch, val_loader, net, agent, dataset):
+def validate(epoch, val_loader, net, agent, dataset):
     net.eval()
     agent.eval()
 
@@ -143,9 +143,41 @@ def test(epoch, val_loader, net, agent, dataset):
             loss = criterion(outputs, labels)
             tasks_losses.update(loss.item(), labels.size(0))           
 
-    print("test accuracy")
-    print("Epoch [{}/{}], Loss: {:.4f}, Acc Val: {:.4f}, Acc Avg: {:.4f}"
-        .format(epoch+1, args.nb_epochs, tasks_losses.avg, tasks_top1.val, tasks_top1.avg))
+    print(f"validation accuracy: {tasks_top1.avg}")
+    # print("Epoch [{}/{}], Loss: {:.4f}, Acc Val: {:.4f}, Acc Avg: {:.4f}"
+    #     .format(epoch+1, args.nb_epochs, tasks_losses.avg, tasks_top1.val, tasks_top1.avg))
+
+    return tasks_top1.avg, tasks_losses.avg
+
+def test(test_loader, net, agent):
+    net.eval()
+    agent.eval()
+
+    tasks_top1 = AverageMeter()
+    tasks_losses = AverageMeter() 
+
+    with torch.no_grad():
+        for i, (images, labels) in enumerate(test_loader):
+            if use_cuda:
+                images, labels = images.cuda(non_blocking=True), labels.cuda(non_blocking=True)
+            images, labels = Variable(images), Variable(labels)
+
+            probs = agent(images)
+            action = gumbel_softmax(probs.view(probs.size(0), -1, 2))
+            policy = action[:,:,1]
+            outputs = net.forward(images, policy)
+
+            _, predicted = torch.max(outputs.data, 1)
+            correct = predicted.eq(labels.data).cpu().sum()
+            tasks_top1.update(correct.item()*100 / (labels.size(0)+0.0), labels.size(0))
+        
+            # Loss
+            loss = criterion(outputs, labels)
+            tasks_losses.update(loss.item(), labels.size(0))           
+
+    print(f"test accuracy: {tasks_top1.avg}")
+    # print("Epoch [{}/{}], Loss: {:.4f}, Acc Val: {:.4f}, Acc Avg: {:.4f}"
+    #     .format(epoch+1, args.nb_epochs, tasks_losses.avg, tasks_top1.val, tasks_top1.avg))
 
     return tasks_top1.avg, tasks_losses.avg
 
@@ -217,68 +249,78 @@ def get_model(model, num_class, dataset = None):
 
 #####################################
 # Prepare data loaders
-train_loaders, val_loaders, num_classes = imdbfolder.prepare_data_loaders(list(datasets.keys()), args.datadir, args.imdbdir, True)
+train_loaders, val_loaders, test_loaders, num_classes = imdbfolder.prepare_data_loaders(list(datasets.keys()), args.datadir, args.imdbdir, True)
 criterion = nn.CrossEntropyLoss()
 
-for i, dataset in enumerate(datasets.keys()):
-    print(dataset)
-    pretrained_model_dir = args.ckpdir + dataset
+# for i, dataset in enumerate(datasets.keys()):
 
-    if not os.path.isdir(pretrained_model_dir):
-        os.mkdir(pretrained_model_dir)
+i = 0
+dataset = 'vgg-flowers' 
+print(dataset)
 
-    results = np.zeros((4, args.nb_epochs, len(num_classes)))
-    f = pretrained_model_dir + "/params.json"
-    with open(f, 'w') as fh:
-        json.dump(vars(args), fh)     
+pretrained_model_dir = args.ckpdir + dataset
 
-    num_class = num_classes[datasets[dataset]]
-    net = get_model("resnet26", num_class, dataset = "imagenet12")
-	
-	
-    agent = agent_net.resnet(sum(net.layer_config) * 2)
-	
-    # freeze the original blocks
-    flag = True
-    for name, m in net.named_modules():
-        if isinstance(m, nn.Conv2d) and 'parallel_blocks' not in name:
-            if flag is True:
-                flag = False
-            else:
-                m.weight.requires_grad = False
-    
-    use_cuda = torch.cuda.is_available()
-    if use_cuda:
-        net.cuda()
-        agent.cuda()
+if not os.path.isdir(pretrained_model_dir):
+    os.mkdir(pretrained_model_dir)
 
-        cudnn.benchmark = True
-        torch.cuda.manual_seed_all(args.seed)
-        #net = nn.DataParallel(net)
-        #agent = nn.DataParallel(agent)
+results = np.zeros((4, args.nb_epochs, len(num_classes)))
+f = pretrained_model_dir + "/params.json"
+with open(f, 'w') as fh:
+    json.dump(vars(args), fh)     
 
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr= args.lr, momentum=0.9, weight_decay= weight_decays[dataset])
-    agent_optimizer = optim.SGD(agent.parameters(), lr= args.lr_agent, momentum= 0.9, weight_decay= 0.001)
+num_class = num_classes[datasets[dataset]]
+net = get_model("resnet26", num_class, dataset = "imagenet12")
 
-    start_epoch = 0
-    for epoch in range(start_epoch, start_epoch+args.nb_epochs):
-        adjust_learning_rate_net(optimizer, epoch, args)
-        adjust_learning_rate_agent(agent_optimizer, epoch, args)
 
-        st_time = time.time()
-        train_acc, train_loss = train(dataset, epoch, train_loaders[datasets[dataset]], net, agent, optimizer, agent_optimizer)
-        test_acc, test_loss = test(epoch, val_loaders[datasets[dataset]], net, agent, dataset)
+agent = agent_net.resnet(sum(net.layer_config) * 2)
 
-        # Record statistics
-        results[0:2,epoch,i] = [train_loss, train_acc]
-        results[2:4,epoch,i] = [test_loss,test_acc]
+# freeze the original blocks
+flag = True
+for name, m in net.named_modules():
+    if isinstance(m, nn.Conv2d) and 'parallel_blocks' not in name:
+        if flag is True:
+            flag = False
+        else:
+            m.weight.requires_grad = False
 
-        print('Epoch lasted {0}'.format(time.time()-st_time))
+use_cuda = torch.cuda.is_available()
+if use_cuda:
+    net.cuda()
+    agent.cuda()
 
-    state = {
-        'net': net,
-        'agent': agent,
-    }
+    cudnn.benchmark = True
+    torch.cuda.manual_seed_all(args.seed)
+    #net = nn.DataParallel(net)
+    #agent = nn.DataParallel(agent)
 
-    torch.save(state, pretrained_model_dir +'/' + dataset + '.t7')
-    np.save(pretrained_model_dir + '/statistics', results)
+optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr= args.lr, momentum=0.9, weight_decay= weight_decays[dataset])
+agent_optimizer = optim.SGD(agent.parameters(), lr= args.lr_agent, momentum= 0.9, weight_decay= 0.001)
+
+start_epoch = 0
+for epoch in range(start_epoch, start_epoch+args.nb_epochs):
+    adjust_learning_rate_net(optimizer, epoch, args)
+    adjust_learning_rate_agent(agent_optimizer, epoch, args)
+
+    st_time = time.time()
+    train_acc, train_loss = train(dataset, epoch, train_loaders[datasets[dataset]], net, agent, optimizer, agent_optimizer)
+    test_acc, test_loss = validate(epoch, val_loaders[datasets[dataset]], net, agent, dataset)
+
+
+    # Record statistics
+    results[0:2,epoch,i] = [train_loss, train_acc]
+    results[2:4,epoch,i] = [test_loss,test_acc]
+
+    print('Epoch lasted {0}'.format(time.time()-st_time))
+
+# do test (vgg-flowers only)
+if test_loaders[datasets[dataset]] is not None: 
+    test(test_loaders[datasets[dataset]], net, agent)
+
+
+state = {
+    'net': net,
+    'agent': agent,
+}
+
+torch.save(state, pretrained_model_dir +'/' + dataset + '.t7')
+np.save(pretrained_model_dir + '/statistics', results)

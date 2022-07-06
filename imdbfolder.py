@@ -55,6 +55,7 @@ class ImageFolder(data.Dataset):
 def prepare_data_loaders(dataset_names, data_dir, imdb_dir, shuffle_train=True, index=None):
     train_loaders = []
     val_loaders = []
+    test_loaders = []
     num_classes = []
     train = [0]
     val = [1]
@@ -149,12 +150,19 @@ def prepare_data_loaders(dataset_names, data_dir, imdb_dir, shuffle_train=True, 
 		
         img_path = data_dir
 
-        trainloader = torch.utils.data.DataLoader(ImageFolder(data_dir, transform_train, None, index, labels_train, imgnames_train), batch_size=128, shuffle=shuffle_train, num_workers=4, pin_memory=True)
-        valloader = torch.utils.data.DataLoader(ImageFolder(data_dir, transform_test, None, None, labels_val, imgnames_val), batch_size=128, shuffle=False, num_workers=4, pin_memory=True)
+        if dataset_names[i] == 'vgg-flowers':
+            trainloader = torch.utils.data.DataLoader(torchvision.datasets.Flowers102("", split="train", download=True, transform=transform_train),batch_size=128, shuffle=shuffle_train, num_workers=4, pin_memory=True)
+            valloader = torch.utils.data.DataLoader(torchvision.datasets.Flowers102("",split="val",download=True,transform=transform_test), batch_size=128, shuffle=False, num_workers=4, pin_memory=True)
+            testloader = torch.utils.data.DataLoader(torchvision.datasets.Flowers102("",split="test",download=True,transform=transform_test), batch_size=128, shuffle=False, num_workers=4, pin_memory=True)
+        else:
+            trainloader = torch.utils.data.DataLoader(ImageFolder(data_dir, transform_train, None, index, labels_train, imgnames_train), batch_size=128, shuffle=shuffle_train, num_workers=4, pin_memory=True)
+            valloader = torch.utils.data.DataLoader(ImageFolder(data_dir, transform_test, None, None, labels_val, imgnames_val), batch_size=128, shuffle=False, num_workers=4, pin_memory=True)
+            testloader = None
 
         train_loaders.append(trainloader)
         val_loaders.append(valloader) 
+        test_loaders.append(testloader)
     
-    return train_loaders, val_loaders, num_classes
+    return train_loaders, val_loaders, test_loaders, num_classes
 
 
