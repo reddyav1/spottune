@@ -22,6 +22,8 @@ import agent_net
 from utils import *
 from gumbel_softmax import *
 
+from visda17 import get_visda_dataloaders
+
 parser = argparse.ArgumentParser(description='PyTorch SpotTune')
 
 parser.add_argument('--nb_epochs', default=110, type=int, help='nb epochs')
@@ -69,7 +71,7 @@ weight_decays = collections.OrderedDict(weight_decays)
 with open(args.ckpdir + '/weight_decays.json', 'w') as fp:
     json.dump(weight_decays, fp)
 
-def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimizer):
+def train(train_loader, net, agent, net_optimizer, agent_optimizer):
     # torch.autograd.set_detect_anomaly(True)
 
     #Train the model
@@ -85,13 +87,17 @@ def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimize
         labels = task_batch[1]    
 
         if use_cuda:
-            images, labels = images.cuda(non_blocking=True), labels.cuda(non_blocking=True)
+            images, labels = images.to(device=device, non_blocking=True), labels.to(device=device, non_blocking=True)
         images, labels = Variable(images), Variable(labels)	   
 
         probs = agent(images)
 
         action = gumbel_softmax(probs.view(probs.size(0), -1, 2))
         policy = action[:,:,1]
+
+        # MANIPULATE POLICY FOR DEBUG (REMOVE!)
+        # policy = torch.ones_like(policy)
+        # policy = torch.zeros_like(policy)        
 
         outputs = net.forward(images, policy)
         _, predicted = torch.max(outputs.data, 1)
@@ -117,7 +123,7 @@ def train(dataset, poch, train_loader, net, agent, net_optimizer, agent_optimize
             
     return tasks_top1.avg , tasks_losses.avg
 
-def validate(epoch, val_loader, net, agent, dataset):
+def validate(val_loader, net, agent):
     net.eval()
     agent.eval()
 
@@ -125,14 +131,19 @@ def validate(epoch, val_loader, net, agent, dataset):
     tasks_losses = AverageMeter() 
 
     with torch.no_grad():
-        for i, (images, labels) in enumerate(val_loader):
+        for i, (images, labels, paths) in enumerate(val_loader):
             if use_cuda:
-                images, labels = images.cuda(non_blocking=True), labels.cuda(non_blocking=True)
+                images, labels = images.to(device=device, non_blocking=True), labels.to(device=device, non_blocking=True)
             images, labels = Variable(images), Variable(labels)
 
             probs = agent(images)
             action = gumbel_softmax(probs.view(probs.size(0), -1, 2))
             policy = action[:,:,1]
+
+            # MANIPULATE POLICY FOR DEBUG (REMOVE!)
+            # policy = torch.ones_like(policy)
+            # policy = torch.zeros_like(policy)   
+
             outputs = net.forward(images, policy)
 
             _, predicted = torch.max(outputs.data, 1)
@@ -165,6 +176,11 @@ def test(test_loader, net, agent):
             probs = agent(images)
             action = gumbel_softmax(probs.view(probs.size(0), -1, 2))
             policy = action[:,:,1]
+
+            # MANIPULATE POLICY FOR DEBUG (REMOVE!)
+            # policy = torch.ones_like(policy)
+            # policy = torch.zeros_like(policy)     
+            
             outputs = net.forward(images, policy)
 
             _, predicted = torch.max(outputs.data, 1)
@@ -182,8 +198,13 @@ def test(test_loader, net, agent):
     return tasks_top1.avg, tasks_losses.avg
 
 def load_weights_to_flatresnet(source, net, num_class, dataset):
-    checkpoint = torch.load(source, encoding="latin1")
-    net_old = checkpoint['net']
+    if source.endswith('.pth'):
+        # do stuff
+        net_old = torch.load(source, map_location='cpu')
+        net_old = net_old.module
+    else:
+        checkpoint = torch.load(source, encoding="latin1")
+        net_old = checkpoint['net']
 
     store_data = []
     t = 0
@@ -236,15 +257,15 @@ def load_weights_to_flatresnet(source, net, num_class, dataset):
     del net_old
     return net
 
-def get_model(model, num_class, dataset = None):
+def get_model(model, num_class, dataset=None):
     if model == 'resnet26':
         rnet = resnet26(num_class)
         if dataset is not None:
             if dataset == 'imagenet12':
                 source = './resnet26_pretrained.t7'
-        else:
-            source = './cv/' + dataset + '/' + dataset + '.t7'
-        rnet = load_weights_to_flatresnet(source, rnet, num_class, dataset)
+            else:
+                source = dataset
+            rnet = load_weights_to_flatresnet(source, rnet, num_class, dataset)
     return rnet
 
 #####################################
@@ -258,6 +279,8 @@ i = 0
 dataset = 'vgg-flowers' 
 print(dataset)
 
+device = 'cuda:0'
+
 pretrained_model_dir = args.ckpdir + dataset
 
 if not os.path.isdir(pretrained_model_dir):
@@ -268,9 +291,10 @@ f = pretrained_model_dir + "/params.json"
 with open(f, 'w') as fh:
     json.dump(vars(args), fh)     
 
-num_class = num_classes[datasets[dataset]]
-net = get_model("resnet26", num_class, dataset = "imagenet12")
-
+# num_class = num_classes[datasets[dataset]]
+n_classes = 12 # visda
+net = get_model("resnet26", n_classes, dataset='pretrained_models/visda_syn_pretrain_v2.pth') # TODO: make this configurable
+# net = get_model("resnet26", n_classes, dataset='imagenet12') # TODO: make this configurable
 
 agent = agent_net.resnet(sum(net.layer_config) * 2)
 
@@ -283,44 +307,66 @@ for name, m in net.named_modules():
         else:
             m.weight.requires_grad = False
 
+# Display info about frozen conv layers
+conv_layers_finetune = [x[0] for x in net.named_modules() if isinstance(x[1], nn.Conv2d) and x[1].weight.requires_grad]
+conv_layers_frozen = [x[0] for x in net.named_modules() if isinstance(x[1], nn.Conv2d) and not x[1].weight.requires_grad]
+
+print(f"Finetuning ({len(conv_layers_finetune)}) conv layers:")
+print(conv_layers_finetune)
+
+print(f"Freezing ({len(conv_layers_frozen)}) conv layers:")
+print(conv_layers_frozen)
+
 use_cuda = torch.cuda.is_available()
 if use_cuda:
-    net.cuda()
-    agent.cuda()
+    net.to(device=device)
+    agent.to(device=device)
 
     cudnn.benchmark = True
     torch.cuda.manual_seed_all(args.seed)
-    #net = nn.DataParallel(net)
-    #agent = nn.DataParallel(agent)
+    # net = nn.DataParallel(net, device_ids=[0])
+    # agent = nn.DataParallel(agent, device_ids=[0])
 
 optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr= args.lr, momentum=0.9, weight_decay= weight_decays[dataset])
 agent_optimizer = optim.SGD(agent.parameters(), lr= args.lr_agent, momentum= 0.9, weight_decay= 0.001)
 
 start_epoch = 0
+best_test_acc = 0
 for epoch in range(start_epoch, start_epoch+args.nb_epochs):
     adjust_learning_rate_net(optimizer, epoch, args)
     adjust_learning_rate_agent(agent_optimizer, epoch, args)
 
-    st_time = time.time()
-    train_acc, train_loss = train(dataset, epoch, train_loaders[datasets[dataset]], net, agent, optimizer, agent_optimizer)
-    test_acc, test_loss = validate(epoch, val_loaders[datasets[dataset]], net, agent, dataset)
+    train_loader = train_loaders[datasets[dataset]]
+    val_loader = val_loaders[datasets[dataset]]
 
+    # VisDA
+    train_loader, val_loader, test_loader = get_visda_dataloaders(train_dir='data/visda17/train', val_dir='data/visda17/validation')
+
+    st_time = time.time()
+    train_acc, train_loss = train(val_loader, net, agent, optimizer, agent_optimizer)
+    test_acc, test_loss = validate(test_loader, net, agent)
 
     # Record statistics
-    results[0:2,epoch,i] = [train_loss, train_acc]
-    results[2:4,epoch,i] = [test_loss,test_acc]
+    # results[0:2,epoch,i] = [train_loss, train_acc]
+    # results[2:4,epoch,i] = [test_loss, test_acc]
 
     print('Epoch lasted {0}'.format(time.time()-st_time))
 
-# do test (vgg-flowers only)
-if test_loaders[datasets[dataset]] is not None: 
-    test(test_loaders[datasets[dataset]], net, agent)
-
-
-state = {
+    state = {
     'net': net,
     'agent': agent,
-}
+    }
 
-torch.save(state, pretrained_model_dir +'/' + dataset + '.t7')
+    if test_acc > best_test_acc:
+        print(f"Surpassed previous best validation accuracy of ({best_test_acc}).\nSaving model...")
+        torch.save(state, 'spottune_visda_v3_best.ckpt') 
+        best_test_acc = test_acc
+
+# do test (vgg-flowers only)
+# if test_loaders[datasets[dataset]] is not None: 
+    # test(test_loaders[datasets[dataset]], net, agent)
+
+
+
+torch.save(state, 'spottune_visda_v2_latest.ckpt')
 np.save(pretrained_model_dir + '/statistics', results)

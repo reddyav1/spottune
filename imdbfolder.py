@@ -106,6 +106,8 @@ def prepare_data_loaders(dataset_names, data_dir, imdb_dir, shuffle_train=True, 
         means = dict_mean_std[dataset_names[i] + 'mean']
         stds = dict_mean_std[dataset_names[i] + 'std']
 
+        print(means,stds)
+
         if dataset_names[i] in ['gtsrb', 'omniglot','svhn']: 
             transform_train = transforms.Compose([
             transforms.Resize(72),

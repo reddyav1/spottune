@@ -136,3 +136,4 @@ class ResNet(nn.Module):
 
 def resnet26(num_class=10, blocks=BasicBlock):
     return  ResNet(blocks, [4,4,4], num_class)
+
