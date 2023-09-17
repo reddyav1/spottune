@@ -18,7 +18,7 @@ import numpy as np
 import json
 import collections
 
-import imdbfolder as imdbfolder
+# import imdbfolder as imdbfolder
 from spottune_models import *
 import models
 import agent_net
@@ -41,7 +41,11 @@ ckpt = torch.load(load_path, map_location=device)
 net = ckpt['net'].module
 agent = ckpt['agent'].module
 
-train_loader, val_loader, test_loader = get_visda_dataloaders(train_dir='data/visda17/train', val_dir='data/visda17/validation')
+train_loader, val_loader, test_loader = get_visda_dataloaders(
+    train_dir='/export/r32/data/visda17/train',
+    val_dir='/export/r32/data/visda17/validation',
+    test_dir='/export/r32/data/visda17/test',
+)
 
 net.eval()
 agent.eval()
