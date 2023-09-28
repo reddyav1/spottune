@@ -5,3 +5,6 @@ data/*
 cv/*
 *.pyc
 *.json
+img_examples*
+wandb/*
+pretrained_models/

@@ -10,6 +10,7 @@ import torch.optim as optim
 from tqdm import trange, tqdm
 import wandb
 import argparse
+from pathlib import Path
 
 
 from main import get_model
@@ -92,15 +93,17 @@ def validate_epoch(val_loader, net, agent=None):
 
     wandb.log({'val_acc': val_acc.avg})
 
-def setup_network(net):
+def setup_network(net, spottune_enabled=False):
     # freeze the original blocks
     flag = True
-    for name, m in net.named_modules():
-        if isinstance(m, nn.Conv2d) and 'parallel_blocks' not in name:
-            if flag is True:
-                flag = False
-            else:
-                m.weight.requires_grad = False
+    if spottune_enabled:
+        for name, m in net.named_modules():
+            # freeze conv layers that don't have "parallel_block", except first one
+            if isinstance(m, nn.Conv2d) and 'parallel_blocks' not in name:
+                if flag is True:
+                    flag = False
+                else:
+                    m.weight.requires_grad = False
 
     # Display info about frozen conv layers
     conv_layers_finetune = [x[0] for x in net.named_modules() if isinstance(x[1], nn.Conv2d) and x[1].weight.requires_grad]
@@ -132,17 +135,19 @@ if __name__ == "__main__":
     parser.add_argument('--train_fraction', type=float, default=1.0)
     parser.add_argument('--log_interval', type=int, default=10)
     parser.add_argument('--gpu_idx', type=int, default=0)
+    parser.add_argument('--save_freq', type=int, default=0)
+    parser.add_argument('--save_path', type=str, default='checkpoints/')
 
     args = parser.parse_args()
 
-    wandb.init(
+    run = wandb.init(
         project='targeted-generalization',
         config=vars(args)
     )
 
     n_classes = 12 # visda
     net = get_model("resnet26", n_classes, dataset=args.initialization)
-    setup_network(net)
+    setup_network(net, spottune_enabled=args.spottune)
 
     device = torch.device('cuda:' + str(args.gpu_idx))
     net = net.to(device=device)
@@ -183,6 +188,13 @@ if __name__ == "__main__":
     for epoch in trange(args.n_epochs):
         train_epoch(train_loader, net, optimizer, agent=agent, agent_optimizer=agent_optimizer, log_interval=args.log_interval)
         validate_epoch(test_loader, net, agent)
+
+        if args.save_freq > 0:
+            if epoch % args.save_freq == 0:
+                torch.save(
+                    {'net': net, 'agent': agent},
+                    Path(args.save_path) / (run.name + '_epoch' + str(epoch) + '.ckpt')
+                )
 
         wandb.log({'net_lr': scheduler.get_last_lr()[0]})
         scheduler.step()

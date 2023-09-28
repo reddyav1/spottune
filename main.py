@@ -14,7 +14,7 @@ import numpy as np
 import json
 import collections
 
-import imdbfolder as imdbfolder
+# import imdbfolder as imdbfolder
 from spottune_models import *
 import models
 import agent_net
@@ -23,53 +23,6 @@ from utils import *
 from gumbel_softmax import *
 
 from visda17 import get_visda_dataloaders
-
-parser = argparse.ArgumentParser(description='PyTorch SpotTune')
-
-parser.add_argument('--nb_epochs', default=110, type=int, help='nb epochs')
-parser.add_argument('--lr', default=0.1, type=float, help='initial learning rate of net')
-parser.add_argument('--lr_agent', default=0.01, type=float, help='initial learning rate of agent')
-
-parser.add_argument('--datadir', default='./data/decathlon-1.0/', help='folder containing data folder')
-parser.add_argument('--imdbdir', default='./data/decathlon-1.0/annotations/', help='annotation folder')
-parser.add_argument('--ckpdir', default='./cv/', help='folder saving checkpoint')
-
-parser.add_argument('--seed', default=0, type=int, help='seed')
-
-parser.add_argument('--step1', default=40, type=int, help='nb epochs before first lr decrease')
-parser.add_argument('--step2', default=60, type=int, help='nb epochs before second lr decrease')
-parser.add_argument('--step3', default=80, type=int, help='nb epochs before third lr decrease')
-
-args = parser.parse_args()
-
-weight_decays = [
-    ("aircraft", 0.0005),
-    ("cifar100", 0.0),
-    ("daimlerpedcls", 0.0005),
-    ("dtd", 0.0),
-    ("gtsrb", 0.0),
-    ("omniglot", 0.0005),
-    ("svhn", 0.0),
-    ("ucf101", 0.0005),
-    ("vgg-flowers", 0.0001),
-    ("imagenet12", 0.0001)]
-
-datasets = [
-    ("aircraft", 0),
-    ("cifar100", 1),
-    ("daimlerpedcls", 2),
-    ("dtd", 3),
-    ("gtsrb", 4),
-    ("omniglot", 5),
-    ("svhn", 6),
-    ("ucf101", 7),
-    ("vgg-flowers", 8)]
-
-datasets = collections.OrderedDict(datasets)
-weight_decays = collections.OrderedDict(weight_decays)
-
-with open(args.ckpdir + '/weight_decays.json', 'w') as fp:
-    json.dump(weight_decays, fp)
 
 def train(train_loader, net, agent, net_optimizer, agent_optimizer):
     # torch.autograd.set_detect_anomaly(True)
@@ -268,105 +221,157 @@ def get_model(model, num_class, dataset=None):
             rnet = load_weights_to_flatresnet(source, rnet, num_class, dataset)
     return rnet
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='PyTorch SpotTune')
+
+    parser.add_argument('--nb_epochs', default=110, type=int, help='nb epochs')
+    parser.add_argument('--lr', default=0.1, type=float, help='initial learning rate of net')
+    parser.add_argument('--lr_agent', default=0.01, type=float, help='initial learning rate of agent')
+
+    parser.add_argument('--datadir', default='./data/decathlon-1.0/', help='folder containing data folder')
+    parser.add_argument('--imdbdir', default='./data/decathlon-1.0/annotations/', help='annotation folder')
+    parser.add_argument('--ckpdir', default='./cv/', help='folder saving checkpoint')
+
+    parser.add_argument('--seed', default=0, type=int, help='seed')
+
+    parser.add_argument('--step1', default=40, type=int, help='nb epochs before first lr decrease')
+    parser.add_argument('--step2', default=60, type=int, help='nb epochs before second lr decrease')
+    parser.add_argument('--step3', default=80, type=int, help='nb epochs before third lr decrease')
+
+    args = parser.parse_args()
+
+    weight_decays = [
+        ("aircraft", 0.0005),
+        ("cifar100", 0.0),
+        ("daimlerpedcls", 0.0005),
+        ("dtd", 0.0),
+        ("gtsrb", 0.0),
+        ("omniglot", 0.0005),
+        ("svhn", 0.0),
+        ("ucf101", 0.0005),
+        ("vgg-flowers", 0.0001),
+        ("imagenet12", 0.0001)]
+
+    datasets = [
+        ("aircraft", 0),
+        ("cifar100", 1),
+        ("daimlerpedcls", 2),
+        ("dtd", 3),
+        ("gtsrb", 4),
+        ("omniglot", 5),
+        ("svhn", 6),
+        ("ucf101", 7),
+        ("vgg-flowers", 8)]
+
+    datasets = collections.OrderedDict(datasets)
+    weight_decays = collections.OrderedDict(weight_decays)
+
+    with open(args.ckpdir + '/weight_decays.json', 'w') as fp:
+        json.dump(weight_decays, fp)
+
+    return args
+
 #####################################
 # Prepare data loaders
-train_loaders, val_loaders, test_loaders, num_classes = imdbfolder.prepare_data_loaders(list(datasets.keys()), args.datadir, args.imdbdir, True)
-criterion = nn.CrossEntropyLoss()
+# train_loaders, val_loaders, test_loaders, num_classes = imdbfolder.prepare_data_loaders(list(datasets.keys()), args.datadir, args.imdbdir, True)
+if __name__ == "__main__":
 
-# for i, dataset in enumerate(datasets.keys()):
+    args = parse_arguments()
+    num_classes = 12
+    criterion = nn.CrossEntropyLoss()
 
-i = 0
-dataset = 'vgg-flowers' 
-print(dataset)
+    # for i, dataset in enumerate(datasets.keys()):
 
-device = 'cuda:0'
+    i = 0
+    dataset = 'vgg-flowers' 
+    # print(dataset)
 
-pretrained_model_dir = args.ckpdir + dataset
+    device = 'cuda:0'
 
-if not os.path.isdir(pretrained_model_dir):
-    os.mkdir(pretrained_model_dir)
+    pretrained_model_dir = args.ckpdir + dataset
 
-results = np.zeros((4, args.nb_epochs, len(num_classes)))
-f = pretrained_model_dir + "/params.json"
-with open(f, 'w') as fh:
-    json.dump(vars(args), fh)     
+    # if not os.path.isdir(pretrained_model_dir):
+    #     os.mkdir(pretrained_model_dir)
 
-# num_class = num_classes[datasets[dataset]]
-n_classes = 12 # visda
-net = get_model("resnet26", n_classes, dataset='pretrained_models/visda_syn_pretrain_v2.pth') # TODO: make this configurable
-# net = get_model("resnet26", n_classes, dataset='imagenet12') # TODO: make this configurable
+    results = np.zeros((4, args.nb_epochs, len(num_classes)))
+    # f = pretrained_model_dir + "/params.json"
+    # with open(f, 'w') as fh:
+    #     json.dump(vars(args), fh)     
 
-agent = agent_net.resnet(sum(net.layer_config) * 2)
+    # num_class = num_classes[datasets[dataset]]
+    n_classes = 12 # visda
+    net = get_model("resnet26", n_classes, dataset='pretrained_models/visda_syn_pretrain_v2.pth') # TODO: make this configurable
+    # net = get_model("resnet26", n_classes, dataset='imagenet12') # TODO: make this configurable
 
-# freeze the original blocks
-flag = True
-for name, m in net.named_modules():
-    if isinstance(m, nn.Conv2d) and 'parallel_blocks' not in name:
-        if flag is True:
-            flag = False
-        else:
-            m.weight.requires_grad = False
+    agent = agent_net.resnet(sum(net.layer_config) * 2)
 
-# Display info about frozen conv layers
-conv_layers_finetune = [x[0] for x in net.named_modules() if isinstance(x[1], nn.Conv2d) and x[1].weight.requires_grad]
-conv_layers_frozen = [x[0] for x in net.named_modules() if isinstance(x[1], nn.Conv2d) and not x[1].weight.requires_grad]
+    # freeze the original blocks
+    flag = True
+    for name, m in net.named_modules():
+        if isinstance(m, nn.Conv2d) and 'parallel_blocks' not in name:
+            if flag is True:
+                flag = False
+            else:
+                m.weight.requires_grad = False
 
-print(f"Finetuning ({len(conv_layers_finetune)}) conv layers:")
-print(conv_layers_finetune)
+    # Display info about frozen conv layers
+    conv_layers_finetune = [x[0] for x in net.named_modules() if isinstance(x[1], nn.Conv2d) and x[1].weight.requires_grad]
+    conv_layers_frozen = [x[0] for x in net.named_modules() if isinstance(x[1], nn.Conv2d) and not x[1].weight.requires_grad]
 
-print(f"Freezing ({len(conv_layers_frozen)}) conv layers:")
-print(conv_layers_frozen)
+    print(f"Finetuning ({len(conv_layers_finetune)}) conv layers:")
+    print(conv_layers_finetune)
 
-use_cuda = torch.cuda.is_available()
-if use_cuda:
-    net.to(device=device)
-    agent.to(device=device)
+    print(f"Freezing ({len(conv_layers_frozen)}) conv layers:")
+    print(conv_layers_frozen)
 
-    cudnn.benchmark = True
-    torch.cuda.manual_seed_all(args.seed)
-    # net = nn.DataParallel(net, device_ids=[0])
-    # agent = nn.DataParallel(agent, device_ids=[0])
+    use_cuda = torch.cuda.is_available()
+    if use_cuda:
+        net.to(device=device)
+        agent.to(device=device)
 
-optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr= args.lr, momentum=0.9, weight_decay= weight_decays[dataset])
-agent_optimizer = optim.SGD(agent.parameters(), lr= args.lr_agent, momentum= 0.9, weight_decay= 0.001)
+        cudnn.benchmark = True
+        torch.cuda.manual_seed_all(args.seed)
+        # net = nn.DataParallel(net, device_ids=[0])
+        # agent = nn.DataParallel(agent, device_ids=[0])
 
-start_epoch = 0
-best_test_acc = 0
-for epoch in range(start_epoch, start_epoch+args.nb_epochs):
-    adjust_learning_rate_net(optimizer, epoch, args)
-    adjust_learning_rate_agent(agent_optimizer, epoch, args)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr= args.lr, momentum=0.9, weight_decay= weight_decays[dataset])
+    agent_optimizer = optim.SGD(agent.parameters(), lr= args.lr_agent, momentum= 0.9, weight_decay= 0.001)
 
-    train_loader = train_loaders[datasets[dataset]]
-    val_loader = val_loaders[datasets[dataset]]
+    start_epoch = 0
+    best_test_acc = 0
+    for epoch in range(start_epoch, start_epoch+args.nb_epochs):
+        adjust_learning_rate_net(optimizer, epoch, args)
+        adjust_learning_rate_agent(agent_optimizer, epoch, args)
 
-    # VisDA
-    train_loader, val_loader, test_loader = get_visda_dataloaders(train_dir='data/visda17/train', val_dir='data/visda17/validation')
+        # train_loader = train_loaders[datasets[dataset]]
+        # val_loader = val_loaders[datasets[dataset]]
 
-    st_time = time.time()
-    train_acc, train_loss = train(val_loader, net, agent, optimizer, agent_optimizer)
-    test_acc, test_loss = validate(test_loader, net, agent)
+        # VisDA
+        train_loader, val_loader, test_loader = get_visda_dataloaders(train_dir='data/visda17/train', val_dir='data/visda17/validation')
 
-    # Record statistics
-    # results[0:2,epoch,i] = [train_loss, train_acc]
-    # results[2:4,epoch,i] = [test_loss, test_acc]
+        st_time = time.time()
+        train_acc, train_loss = train(val_loader, net, agent, optimizer, agent_optimizer)
+        test_acc, test_loss = validate(test_loader, net, agent)
 
-    print('Epoch lasted {0}'.format(time.time()-st_time))
+        # Record statistics
+        # results[0:2,epoch,i] = [train_loss, train_acc]
+        # results[2:4,epoch,i] = [test_loss, test_acc]
 
-    state = {
-    'net': net,
-    'agent': agent,
-    }
+        print('Epoch lasted {0}'.format(time.time()-st_time))
 
-    if test_acc > best_test_acc:
-        print(f"Surpassed previous best validation accuracy of ({best_test_acc}).\nSaving model...")
-        torch.save(state, 'spottune_visda_v3_best.ckpt') 
-        best_test_acc = test_acc
+        state = {
+        'net': net,
+        'agent': agent,
+        }
 
-# do test (vgg-flowers only)
-# if test_loaders[datasets[dataset]] is not None: 
-    # test(test_loaders[datasets[dataset]], net, agent)
+        if test_acc > best_test_acc:
+            print(f"Surpassed previous best validation accuracy of ({best_test_acc}).\nSaving model...")
+            torch.save(state, 'spottune_visda_v3_best.ckpt') 
+            best_test_acc = test_acc
 
+    # do test (vgg-flowers only)
+    # if test_loaders[datasets[dataset]] is not None: 
+        # test(test_loaders[datasets[dataset]], net, agent)
 
-
-torch.save(state, 'spottune_visda_v2_latest.ckpt')
-np.save(pretrained_model_dir + '/statistics', results)
+    torch.save(state, 'spottune_visda_v2_latest.ckpt')
+    np.save(pretrained_model_dir + '/statistics', results)

@@ -15,6 +15,8 @@ from main import get_model
 from visda17 import get_visda_dataloaders
 from targeted_synth_training import train_epoch, validate_epoch
 
+def count_trainable_params(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 parser = argparse.ArgumentParser()
 
@@ -28,11 +30,14 @@ parser.add_argument('--train_fraction', type=float, default=1.0)
 parser.add_argument('--log_interval', type=int, default=10)
 parser.add_argument('--gpu_idx', type=int, default=0)
 parser.add_argument('--n_epochs', type=int, default=1)
+parser.add_argument('--train_first_conv', action='store_true', default=False)
 
 args = parser.parse_args()
 
-def count_trainable_params(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+wandb.init(
+        project='targeted-generalization',
+        config=vars(args)
+)
 
 num_classes = 12
 
@@ -51,10 +56,10 @@ net.to(device='cuda:'+str(args.gpu_idx))
 # Freeze params
 strategy_to_name = { # maps ft strategy to unfrozen layer name components 
     'linear_probe': ['linear', 'fc'],
-    'last-1': ['linear', 'fc', '2.3'],
-    'last-2': ['linear', 'fc', '2.3', '2.2'],
-    'last-3': ['linear', 'fc', '2.3', '2.2', '2.1'],
-    'bn+last-3': ['linear', 'fc', 'bn', '2.3', '2.2', '2.1'],
+    'last-1': ['linear', 'fc', 'blocks.2.3'],
+    'last-2': ['linear', 'fc', 'blocks.2.3', 'blocks.2.2'],
+    'last-3': ['linear', 'fc', 'blocks.2.3', 'blocks.2.2', 'blocks.2.1'],
+    'bn+last-3': ['linear', 'fc', 'bn', 'blocks.2.3', 'blocks.2.2', 'blocks.2.1'],
     'bn_only': ['linear', 'fc', 'bn'],
     'bn_nolinear': ['bn'],
     'full': [''],
@@ -83,7 +88,7 @@ needs_training = lambda name: any(
 frozen = []
 unfrozen = []
 for name, m in net.named_parameters():
-    if needs_training(name):
+    if needs_training(name) or (name == 'conv1.weight' and args.train_first_conv):
         m.requires_grad = True
         unfrozen.append(name)
     else:
@@ -92,8 +97,9 @@ for name, m in net.named_parameters():
 
 
 n_trainable_params = count_trainable_params(net)
+wandb.log({"trainable_params" : n_trainable_params})
 print("frozen params: ", frozen)
-print("trainable params: ", unfrozen)
+print("\ntrainable params: ", unfrozen)
 print("trainable param count: ", n_trainable_params)
 
 train_loader, val_loader, test_loader = get_visda_dataloaders(
@@ -107,11 +113,6 @@ optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()),
                         lr=lr,
                         momentum=0.9,
                         weight_decay=1e-4)
-
-wandb.init(
-        project='targeted-generalization',
-        config=vars(args)
-)
 
 print("training...")
 for i in range(args.n_epochs):

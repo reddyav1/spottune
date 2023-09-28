@@ -5,11 +5,11 @@ from torch.autograd import Variable
 import time
 
 def sample_gumbel(shape, eps=1e-20):
-    U = torch.cuda.FloatTensor(shape).uniform_()
-    return -Variable(torch.log(-torch.log(U + eps) + eps))
+    U = torch.FloatTensor(shape).uniform_()
+    return -(torch.log(-torch.log(U + eps) + eps))
 
 def gumbel_softmax_sample(logits, temperature):
-    y = logits + sample_gumbel(logits.size())
+    y = logits + sample_gumbel(logits.size()).to(logits.device)
     return F.softmax(y / temperature, dim=-1)
 
 def gumbel_softmax(logits, temperature = 5):
