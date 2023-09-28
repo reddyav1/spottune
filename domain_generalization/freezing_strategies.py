@@ -1,6 +1,6 @@
 """
 Testing generalization performance of pre-trained ResNet-26 on VisDA real test
-with simple linear probe
+with various parameter freezing strategies 
 """
 
 # Do linear probe with both synthetic training data and real training data
